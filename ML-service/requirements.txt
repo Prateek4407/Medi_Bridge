@@ -1,0 +1,8 @@
+# Versions below were tested together. scikit-learn MUST stay at 1.9.1: the .joblib models were trained with it
+# and a different version can load them wrongly or fail.
+fastapi==0.143.3
+uvicorn==0.54.0
+pandas==3.0.2
+numpy==2.4.4
+scikit-learn==1.9.1
+joblib==1.5.3

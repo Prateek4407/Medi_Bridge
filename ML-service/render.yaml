@@ -1,0 +1,14 @@
+# Render blueprint for the ML service (a separate Render "Web Service" from the Node backend).
+services:
+  - type: web
+    name: medibridge-ml
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: ALLOWED_ORIGINS        # your Vercel website address(es), comma separated, no trailing slash
+        sync: false
