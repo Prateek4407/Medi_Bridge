@@ -81,7 +81,8 @@ only `services/fileStorage.js`.
 * `GET /api/cases/:caseId/stream` pushes updates with Server-Sent Events (no new package). The page falls back to polling.
 * A driver registers with the role **driver**, a doctor links the driver's email to an ambulance, and the driver's phone
   sends GPS to `PATCH /api/ambulances/mine/location` (the Driver page does this every 4 s).
-* While GPS is fresh (< 90 s) the tracking page shows `source: "live"`. Otherwise the position is **simulated** and labelled so.
+* While GPS is fresh (< 90 s) the tracking page shows `source: "live"`. After a case completes, a fresh final GPS fix is retained as
+  `source: "last-known"`; otherwise the position is **simulated** and labelled so.
 * Pushes work for a single server instance. For several instances, replace `services/realtime.js` with Redis pub/sub.
 
 ### Consent and audit history

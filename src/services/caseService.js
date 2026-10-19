@@ -68,7 +68,7 @@ async function advanceIfDue(c) {
 async function restart(c) {
   await ambulances.release(c);
   c.stage = 0; c.stageStart = new Date(); c.stageLog = [{ stage: 0, at: c.stageStart }];
-  c.ambulance = null; c.ambulanceOrigin = undefined; c.ambulanceAssignedAt = null;
+  c.ambulance = null; c.ambulanceOrigin = undefined; c.ambulanceAssignedAt = null; c.ambulanceLastPosition = undefined;
   await c.save();
   realtime.notifyCase(c.caseId);
   return c;
