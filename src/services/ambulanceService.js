@@ -3,6 +3,7 @@ const Hospital = require('../models/Hospital');
 const realtime = require('./realtime');
 
 const STALE_ASSIGNMENT_MS = 30 * 60 * 1000;      // an ambulance stuck "assigned" for 30 min is released
+const FRESH_GPS_MS = 90 * 1000;
 
 /* distance between two coordinates in km (haversine) */
 function distanceKm(a, b) {
@@ -85,6 +86,15 @@ async function release(c) {
   if (!id) return;
   const amb = await Ambulance.findById(id);
   if (!amb || amb.assignedCase !== c.caseId) return;
+  const location = amb.location;
+  if (location && location.source === 'gps' && location.lat != null && location.lng != null &&
+      location.updatedAt && Date.now() - new Date(location.updatedAt).getTime() < FRESH_GPS_MS) {
+    c.ambulanceLastPosition = {
+      lat: location.lat,
+      lng: location.lng,
+      updatedAt: location.updatedAt
+    };
+  }
   const base = await Hospital.findById(amb.hospital);
   amb.status = 'available'; amb.assignedCase = null; amb.assignedAt = null;
   if (base && base.lat != null) amb.location = { lat: base.lat, lng: base.lng, updatedAt: new Date(), source: 'base' };
@@ -95,8 +105,16 @@ async function release(c) {
 /** Position shown on the tracking page: real GPS if the driver app is sending it, otherwise a simulation. */
 function livePosition(c, amb, stage, frac) {
   const loc = amb.location;
-  const fresh = loc && loc.source === 'gps' && loc.updatedAt && Date.now() - new Date(loc.updatedAt).getTime() < 90 * 1000;
+  const fresh = loc && loc.source === 'gps' && loc.updatedAt && Date.now() - new Date(loc.updatedAt).getTime() < FRESH_GPS_MS;
   if (fresh && stage < 5) return { lat: loc.lat, lng: loc.lng, updatedAt: loc.updatedAt, source: 'live' };
+  if (stage >= 5 && c.ambulanceLastPosition && c.ambulanceLastPosition.lat != null && c.ambulanceLastPosition.lng != null) {
+    return {
+      lat: c.ambulanceLastPosition.lat,
+      lng: c.ambulanceLastPosition.lng,
+      updatedAt: c.ambulanceLastPosition.updatedAt,
+      source: 'last-known'
+    };
+  }
 
   const hospital = c.hospital && c.hospital.name ? c.hospital : null;
   const origin = c.ambulanceOrigin && c.ambulanceOrigin.lat != null ? c.ambulanceOrigin : hospital;

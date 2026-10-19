@@ -141,6 +141,9 @@ describe('Dispatch: nearest ambulance is assigned and released', () => {
   test('finishing the first case frees the ambulance, then the second can continue', async () => {
     for (let i = 0; i < 3; i++) await go(c1, patient.token);                            // stages 3, 4, 5
     expect((await api().get(`/api/cases/${c1.caseId}/track`)).body.data.case.stage).toBe(5);
+    const completed = (await api().get(`/api/cases/${c1.caseId}/track`)).body.data.case.ambulance;
+    expect(completed.position.source).toBe('last-known');
+    expect(completed.position.lat).toBeCloseTo(28.60, 4);
     expect((await api().get('/api/ambulances/availability')).body.data.available).toBe(1);
     const again = await go(c2, patient2.token);
     expect(again.status).toBe(200); expect(again.body.data.case.ambulance.registration).toBeTruthy();

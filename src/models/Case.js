@@ -22,6 +22,7 @@ const caseSchema = new mongoose.Schema({
   ambulance: { type: mongoose.Schema.Types.ObjectId, ref: 'Ambulance', default: null },
   ambulanceOrigin: { lat: Number, lng: Number },       // where the ambulance was when it was assigned
   ambulanceAssignedAt: { type: Date, default: null },
+  ambulanceLastPosition: { lat: Number, lng: Number, updatedAt: Date }, // fresh GPS snapshot captured when the case completes
   isDemo: { type: Boolean, default: false },
   acknowledgedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   acknowledgedAt: { type: Date, default: null }
