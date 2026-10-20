@@ -9,7 +9,12 @@ venv/
 !models/response_delay_model.joblib
 !models/response_delay_model_tuned.joblib
 data/emergency_severity/*.csv
+!data/emergency_severity/
+!data/emergency_severity/emergency_severity_model.joblib
 
 hospital_bed_prediction/data/
+!hospital_bed_prediction/data/
+!hospital_bed_prediction/data/hospital_occupancy.csv
 hospital_bed_prediction/models/
-hospital_bed_prediction/hospital_occupancy.csv
+!hospital_bed_prediction/models/
+!hospital_bed_prediction/models/hospital_bed_model.joblib

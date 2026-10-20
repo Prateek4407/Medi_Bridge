@@ -79,6 +79,21 @@ def test_cors_for_the_website():
     assert r.status_code == 200 and r.headers["access-control-allow-origin"] in ("*", "https://medibridge.vercel.app")
 
 
-def test_models_without_files_answer_503_not_a_crash():
-    assert client.post("/predict/severity", json={}).status_code == 503
-    assert client.post("/predict/beds").status_code == 503
+def test_severity_model_uses_archived_training_schema():
+    training = pd.read_json(ROOT / "tests" / "fixtures" / "severity_sample.json", typ="series").to_frame().T
+    sample = training.drop(columns=["patient_id", "triage_nurse_id", "disposition", "ed_los_hours", "triage_acuity"]).iloc[0].to_dict()
+    r = client.post("/predict/severity", json=sample)
+    assert r.status_code == 200
+    assert 1 <= r.json()["predicted_acuity"] <= 5
+
+
+def test_hospital_bed_model_predicts_each_department():
+    r = client.post("/predict/beds")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["predictions"]
+    assert all({
+        "department",
+        "last_record_date",
+        "predicted_next_day_available_beds",
+    } <= set(prediction) for prediction in payload["predictions"])
