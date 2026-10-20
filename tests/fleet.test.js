@@ -111,14 +111,10 @@ describe('Dispatch: nearest ambulance is assigned and released', () => {
   });
   const go = (c, t) => api().post(`/api/cases/${c.caseId}/advance`).set(auth(t));
 
-  test('no ambulance before the hospital confirms', async () => {
+  test('hospital confirmation and ambulance assignment happen automatically', async () => {
     const r = await api().post('/api/cases').set(auth(patient.token)).send(caseBody()); c1 = r.body.data.case;
-    expect(r.status).toBe(201); expect(c1.ambulance).toBeNull();
-  });
-  test('moving to "Ambulance assigned" claims the free ambulance', async () => {
-    await go(c1, patient.token);                                                        // stage 1
-    const r = await go(c1, patient.token);                                              // stage 2
-    expect(r.status).toBe(200); const cs = r.body.data.case;
+    expect(r.status).toBe(201); expect(c1.stage).toBe(2); expect(c1.ambulance.registration).toBeTruthy();
+    const cs = c1;
     expect(cs.stage).toBe(2); expect(cs.ambulance.registration).toBeTruthy(); expect(cs.ambulance.driverName).toBeTruthy();
     expect(cs.ambulance.position.source).toBe('simulated');
     expect((await api().get('/api/ambulances/availability')).body.data.available).toBe(0);
@@ -134,9 +130,7 @@ describe('Dispatch: nearest ambulance is assigned and released', () => {
   });
   test('a second case waits when every ambulance is busy', async () => {
     const r = await api().post('/api/cases').set(auth(patient2.token)).send(caseBody()); c2 = r.body.data.case;
-    await go(c2, patient2.token);
-    const blocked = await go(c2, patient2.token);
-    expect(blocked.status).toBe(409); expect(blocked.body.message).toMatch(/No ambulance is free/);
+    expect(r.status).toBe(201); expect(c2.stage).toBe(1); expect(c2.ambulance).toBeNull();
   });
   test('finishing the first case frees the ambulance, then the second can continue', async () => {
     await api().patch('/api/ambulances/mine/location').set(auth(driver.token)).send({ lat: 28.5783, lng: 77.3228 });
@@ -149,8 +143,8 @@ describe('Dispatch: nearest ambulance is assigned and released', () => {
     expect(completed.position.source).toBe('last-known');
     expect(completed.position.lat).toBeCloseTo(28.5985, 4);
     expect((await api().get('/api/ambulances/availability')).body.data.available).toBe(1);
-    const again = await go(c2, patient2.token);
-    expect(again.status).toBe(200); expect(again.body.data.case.ambulance.registration).toBeTruthy();
+    const again = await api().get(`/api/cases/${c2.caseId}/track`);
+    expect(again.status).toBe(200); expect(again.body.data.case.stage).toBe(2); expect(again.body.data.case.ambulance.registration).toBeTruthy();
   });
   test('restart gives the ambulance back', async () => {
     const r = await api().post(`/api/cases/${c2.caseId}/restart`).set(auth(patient2.token));
@@ -158,7 +152,7 @@ describe('Dispatch: nearest ambulance is assigned and released', () => {
     expect((await api().get('/api/ambulances/availability')).body.data.available).toBe(1);
   });
   test('an ambulance on a case cannot be removed', async () => {
-    await go(c2, patient2.token); await go(c2, patient2.token);
+    await api().get(`/api/cases/${c2.caseId}/track`);
     const list = await api().get('/api/ambulances?status=assigned').set(auth(doctor.token));
     expect(list.body.count).toBe(1);
     expect((await api().delete(`/api/ambulances/${list.body.data.ambulances[0].id}`).set(auth(doctor.token))).status).toBe(409);
