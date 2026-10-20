@@ -81,6 +81,9 @@ only `services/fileStorage.js`.
 * `GET /api/cases/:caseId/stream` pushes updates with Server-Sent Events (no new package). The page falls back to polling.
 * A driver registers with the role **driver**, a doctor links the driver's email to an ambulance, and the driver's phone
   sends GPS to `PATCH /api/ambulances/mine/location` (the Driver page does this every 4 s).
+* Real emergencies do not advance or complete from `STAGE_STEP_MS`: fresh GPS within 100 m of the pickup moves the case to
+  **Pickup done**, `POST /api/ambulances/mine/cases/:caseId/pickup` confirms the patient is loaded, and GPS within 100 m of
+  the hospital completes the case. Demo cases retain timer-driven progression.
 * While GPS is fresh (< 90 s) the tracking page shows `source: "live"`. After a case completes, a fresh final GPS fix is retained as
   `source: "last-known"`; otherwise the position is **simulated** and labelled so.
 * Pushes work for a single server instance. For several instances, replace `services/realtime.js` with Redis pub/sub.
@@ -105,6 +108,7 @@ only `services/fileStorage.js`.
 | GET | `/api/ambulances/mine` | Driver | My ambulance |
 | PATCH | `/api/ambulances/mine/location` | Driver | Send live GPS `{ lat, lng }` |
 | PATCH | `/api/ambulances/mine/status` | Driver | `available` or `offline` |
+| POST | `/api/ambulances/mine/cases/:caseId/pickup` | Driver | Confirm patient pickup after reaching the pickup point |
 | GET | `/api/cases/:caseId/stream` | Public | Live tracking stream (SSE) |
 | GET | `/api/consent` | Patient | Current consent + history |
 | POST | `/api/consent` | Patient | `{ granted: true | false }` |

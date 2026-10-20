@@ -26,7 +26,7 @@ Format: JSON (`Content-Type: application/json`), except document upload (`multip
 | 11 | GET | `/api/cases/active` | Any login | Most recent case still in progress |
 | 12 | GET | `/api/cases/:caseId/track` | Public | Live tracking view (no phone/symptoms) |
 | 13 | GET | `/api/cases/:caseId` | Owner / Doctor | Full case details |
-| 14 | POST | `/api/cases/:caseId/advance` | Owner / Doctor / anonymous case | "Advance step (demo)" |
+| 14 | POST | `/api/cases/:caseId/advance` | Owner / Doctor / anonymous case | Advance a demo case (real cases stop at ambulance assignment) |
 | 15 | POST | `/api/cases/:caseId/restart` | Owner / Doctor / anonymous case | "Restart demo" |
 | 16 | POST | `/api/cases/:caseId/acknowledge` | Doctor | "Acknowledge readiness" |
 | **Appointment slots** | | | | |
@@ -153,7 +153,7 @@ Patient: own cases. Doctor: all cases. Newest first. → `{ count, data: { cases
 → `data.case` = most recent case with stage < 6 (or `null`). Used by "Active emergency coordination".
 
 ### GET `/api/cases/:caseId/track`  (public)
-Same as the Case object but **without** phone, symptoms, landmark, GPS and relationship. Safe for the "Share live link" page. Calling it also moves the simulation forward (one stage every 6 seconds). `404` if the case id is unknown.
+Same as the Case object but **without** phone, symptoms, landmark, GPS and relationship. Safe for the "Share live link" page. Demo cases move forward on the configured timer; real cases advance from ambulance GPS and driver confirmation. `404` if the case id is unknown.
 
 ### GET `/api/cases/:caseId`  (owner or doctor)
 Full Case object. `401` not logged in, `403` someone else's case.
@@ -182,6 +182,10 @@ Marks readiness acknowledged. → `data.case` with `acknowledgedAt`. `403` for p
 ```
 `phone`, `relationship`, `symptoms`, `landmark`, `gps`, `acknowledgedAt` appear only in the full view.
 Stages: 1 Request received → 2 Hospital confirmed → 3 Ambulance assigned → 4 Pickup done → 5 On the way to hospital → 6 Arrived at hospital. The frontend should poll `/track` every 1–2 seconds and use `stageProgress` (0–1) to move the ambulance marker.
+
+For real cases, GPS within 100 m of the pickup advances stage 3 to stage 4. The linked driver confirms the patient is loaded with
+`POST /api/ambulances/mine/cases/:caseId/pickup`; GPS within 100 m of the receiving hospital then completes the case. Every GPS
+update reevaluates the assigned case and publishes a realtime update.
 
 ## 5. Appointment slots
 

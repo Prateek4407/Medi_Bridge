@@ -4,6 +4,7 @@ const realtime = require('./realtime');
 
 const STALE_ASSIGNMENT_MS = 30 * 60 * 1000;      // an ambulance stuck "assigned" for 30 min is released
 const FRESH_GPS_MS = 90 * 1000;
+const GPS_PROXIMITY_METERS = 100;
 
 /* distance between two coordinates in km (haversine) */
 function distanceKm(a, b) {
@@ -13,6 +14,8 @@ function distanceKm(a, b) {
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
 }
+const distanceMeters = (a, b) => distanceKm(a, b) * 1000;
+const withinGpsRadius = (a, b) => distanceMeters(a, b) <= GPS_PROXIMITY_METERS;
 const lerp = (a, b, t) => ({ lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t });
 const hospitalId = (c) => (c.hospital && c.hospital._id) || c.hospital;
 
@@ -129,4 +132,7 @@ function livePosition(c, amb, stage, frac) {
   return { lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6), updatedAt: new Date(), source: 'simulated' };
 }
 
-module.exports = { fleetEnabled, countsByHospital, assignNearest, release, livePosition, distanceKm, pickupPoint };
+module.exports = {
+  fleetEnabled, countsByHospital, assignNearest, release, livePosition, distanceKm, distanceMeters,
+  withinGpsRadius, GPS_PROXIMITY_METERS, pickupPoint
+};

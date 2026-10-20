@@ -135,7 +135,7 @@ describe('Hospitals', () => {
 });
 
 describe('Emergency cases', () => {
-  let c;
+  let c, demo;
   test('create without login (public emergency flow)', async () => {
     const r = await api().post('/api/cases').send(caseBody());
     expect(r.status).toBe(201); c = r.body.data.case;
@@ -158,20 +158,22 @@ describe('Emergency cases', () => {
   });
   test('track unknown case -> 404', async () => { expect((await api().get('/api/cases/CB-0000/track')).status).toBe(404); });
   test('stage moves forward with time (simulation)', async () => {
-    await Case.updateOne({ caseId: c.caseId }, { stageStart: new Date(Date.now() - 13000) });
-    const r = await api().get(`/api/cases/${c.caseId}/track`);
+    const created = await api().post('/api/cases/demo');
+    demo = created.body.data.case;
+    await Case.updateOne({ caseId: demo.caseId }, { stageStart: new Date(Date.now() - 13000) });
+    const r = await api().get(`/api/cases/${demo.caseId}/track`);
     expect(r.body.data.case.stage).toBe(2); expect(r.body.data.case.stageLabel).toBe('Stage 3 of 6');
     expect(r.body.data.case.timeline.filter(t => t.state === 'done')).toHaveLength(2);
     expect(r.body.data.case.liveStatus).toBe('Ambulance heading to the patient');
   });
   test('stage stops at 6 / Arrived', async () => {
-    await Case.updateOne({ caseId: c.caseId }, { stageStart: new Date(Date.now() - 100000) });
-    const r = await api().get(`/api/cases/${c.caseId}/track`);
+    await Case.updateOne({ caseId: demo.caseId }, { stageStart: new Date(Date.now() - 100000) });
+    const r = await api().get(`/api/cases/${demo.caseId}/track`);
     expect(r.body.data.case.stage).toBe(5); expect(r.body.data.case.etaMinutes).toBe(0); expect(r.body.data.case.status.label).toBe('Handoff completed');
   });
   test('restart and advance (demo buttons)', async () => {
-    const rs = await api().post(`/api/cases/${c.caseId}/restart`); expect(rs.body.data.case.stage).toBe(0);
-    const ad = await api().post(`/api/cases/${c.caseId}/advance`); expect(ad.body.data.case.stage).toBe(1);
+    const rs = await api().post(`/api/cases/${demo.caseId}/restart`); expect(rs.body.data.case.stage).toBe(0);
+    const ad = await api().post(`/api/cases/${demo.caseId}/advance`); expect(ad.body.data.case.stage).toBe(1);
   });
   test('owned case cannot be advanced anonymously', async () => {
     const mk = await api().post('/api/cases').set(auth(patient.token)).send(caseBody());
