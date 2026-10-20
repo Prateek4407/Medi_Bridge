@@ -31,19 +31,44 @@ and the `toJSON` rules in `models/plugin.js`).
 ## Run
 ```
 npm install
-cp .env.example .env        # set MONGO_URI (local MongoDB or Atlas) and JWT_SECRET
+node -e "require('fs').closeSync(require('fs').openSync('.env', 'a'))"  # create .env on Windows; use `touch .env` on macOS/Linux
 npm run seed                # optional: demo accounts patient@demo.test / doctor@demo.test (password demo1234)
 npm run dev                 # http://localhost:5000/api/health
 ```
-Hospitals and a demo ambulance fleet are seeded automatically on first start (the demo driver login is driver@demo.test after `npm run seed`). Set `CLIENT_URL` to your frontend URL (default `http://localhost:5173`).
+The server loads `.env` with `dotenv`; there is no checked-in `.env.example`, so create the file yourself and never commit it.
+Hospitals and the demo ambulance fleet are seeded automatically on first start (the demo driver login is
+`driver@demo.test` after `npm run seed`).
+
+### Configuration
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `5000` | HTTP port |
+| `MONGO_URI` | `mongodb://127.0.0.1:27017/medibridge` | MongoDB database used by the server |
+| `MONGO_URI_TEST` | `mongodb://127.0.0.1:27017/medibridge_test` | Database used by Jest; it is dropped on every run |
+| `JWT_SECRET` | `dev-only-secret-change-me` | JWT signing key; required in production |
+| `JWT_EXPIRES_IN` | `7d` | JWT lifetime |
+| `CLIENT_URL` | `http://localhost:5173` | Comma-separated frontend origins allowed by CORS |
+| `UPLOAD_DIR` | `uploads` | Legacy on-disk fallback for files uploaded before GridFS |
+| `STAGE_STEP_MS` | `6000` | Timer interval for demo-case stage progression |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | unset | Optional first administrator created at startup |
+| `ADMIN_NAME` / `ADMIN_PHONE` | `Administrator` / `9000000001` | Optional administrator profile fields |
+
+For example, a local `.env` can contain:
+```
+MONGO_URI=mongodb://127.0.0.1:27017/medibridge
+JWT_SECRET=replace-this-with-a-long-random-value
+CLIENT_URL=http://localhost:5173
+```
 
 ## Test
 ```
 npm test
 ```
 Uses `MONGO_URI_TEST` (default `mongodb://127.0.0.1:27017/medibridge_test`). **That database is dropped on every run**, so never point it at real data.
-Covers auth, validation, role rules, tracking stage progression, slot overlap / double booking, payments, and
-document upload / permissions / file download.
+Covers auth and approval, validation, role rules, ambulance availability and assignment, GPS proximity progression,
+driver pickup confirmation, SSE/polling-compatible tracking, slot overlap / double booking, payments, and document
+upload / permissions / file download. A local MongoDB instance must be running before `npm test`.
 
 ## What is new
 
@@ -70,24 +95,28 @@ only `services/fileStorage.js`.
 
 ### Ambulance fleet and dispatch
 * Doctors manage ambulances (vehicle number, base hospital, type, equipment, driver, status).
-* When a hospital confirms a request (stage 2, "Ambulance assigned") the **nearest free ambulance** is claimed
-  atomically, preferring the chosen hospital's own vehicles. It is freed when the case reaches stage 6 or is restarted,
-  and automatically after 30 minutes if a case is abandoned.
-* If every ambulance is busy the case **waits at stage 2** ("waiting for a free ambulance") instead of pretending.
+* A real emergency is automatically moved from request received to hospital confirmed, then the **nearest free ambulance**
+  is claimed atomically, preferring the chosen hospital's own vehicles. It is freed when the case reaches the hospital
+  or is restarted, and automatically after 30 minutes if a case is abandoned.
+* If every ambulance is busy the case waits at hospital confirmation until a later tracking request finds a free vehicle;
+  it does not pretend that an ambulance has been assigned.
 * The Hospital Finder and the delay-prediction form show how many ambulances are free (`ambulances: { total, available }`).
-* If no ambulance has been created yet, cases use the old fully simulated flow (nothing breaks).
+* If no ambulance exists, cases use the old fully simulated flow (nothing breaks). Demo cases always retain timer-driven
+  progression and the manual `/advance` and `/restart` controls.
 
 ### Real-time tracking (honest about what is real)
-* `GET /api/cases/:caseId/stream` pushes updates with Server-Sent Events (no new package). The page falls back to polling.
-* A driver registers with the role **driver**, a doctor links the driver's email to an ambulance, and the driver's phone
-  sends GPS to `PATCH /api/ambulances/mine/location` (the Driver page does this every 4 s).
-* Real emergencies automatically move through hospital confirmation and ambulance assignment (when a fleet ambulance is
-  available) without a manual Advance action. They do not otherwise advance or complete from `STAGE_STEP_MS`: fresh GPS within 100 m of the pickup moves the case to
-  **Pickup done**, `POST /api/ambulances/mine/cases/:caseId/pickup` confirms the patient is loaded, and GPS within 100 m of
-  the hospital completes the case. Demo cases retain timer-driven progression.
-* While GPS is fresh (< 90 s) the tracking page shows `source: "live"`. After a case completes, a fresh final GPS fix is retained as
-  `source: "last-known"`; otherwise the position is **simulated** and labelled so.
-* Pushes work for a single server instance. For several instances, replace `services/realtime.js` with Redis pub/sub.
+* `GET /api/cases/:caseId/stream` is a public SSE endpoint. It sends `data: {"case": ...}` immediately and every 1.5 seconds,
+  sends an update immediately after a GPS change, emits `event: done` when the case completes, and closes after 10 minutes.
+  Use `EventSource` where available and poll `GET /api/cases/:caseId/track` every 1–2 seconds as the fallback.
+* A driver registers with role **driver**, an approved account is linked by a doctor, and the driver's phone sends
+  `{ "lat": 28.61, "lng": 77.20 }` to `PATCH /api/ambulances/mine/location` (the Driver page sends it every 4 seconds).
+* For a real case, fresh GPS within 100 m of the pickup point moves the case to **Pickup done**. The driver then calls
+  `POST /api/ambulances/mine/cases/:caseId/pickup` to confirm the patient is loaded; fresh GPS within 100 m of the receiving
+  hospital completes the case. Real cases do not advance from `STAGE_STEP_MS`.
+* While GPS is fresh (<90 seconds), the position is labelled `source: "live"`. After completion, the final fresh fix is retained
+  as `source: "last-known"`; when no usable GPS is available, the position is simulated and labelled `source: "simulated"`.
+* Pushes use in-process pub/sub and therefore work on one server instance. For multiple instances, replace
+  `services/realtime.js` with a Redis pub/sub implementation.
 
 ### Consent and audit history
 * Patients can switch sharing of their documents with doctors on/off (`/api/consent`). Withdrawing hides every document
@@ -117,6 +146,28 @@ only `services/fileStorage.js`.
 
 Case JSON now also contains `ambulance` (`registration`, `type`, `equipment`, `position`; the full view adds the driver's
 name and phone) and `waitingForAmbulance`. Hospital JSON contains `ambulances`.
+
+### Tracking and driver API examples
+
+```bash
+# Public polling view (safe to share)
+curl http://localhost:5000/api/cases/CB-2041/track
+
+# Public SSE stream; keep the connection open
+curl -N http://localhost:5000/api/cases/CB-2041/stream
+
+# Driver GPS (Bearer token from driver login)
+curl -X PATCH http://localhost:5000/api/ambulances/mine/location \
+  -H "Authorization: Bearer <driver-token>" -H "Content-Type: application/json" \
+  -d "{\"lat\":28.5985,\"lng\":77.3430}"
+
+# Driver confirms pickup after GPS reaches the pickup radius
+curl -X POST http://localhost:5000/api/ambulances/mine/cases/CB-2041/pickup \
+  -H "Authorization: Bearer <driver-token>"
+```
+
+The complete route and request/response reference is in [docs/API.md](docs/API.md). The public tracking view intentionally
+omits phone, symptoms, landmark, relationship, and patient GPS; use the authenticated case endpoint for the full view.
 
 ## Deploy (e.g. Render + MongoDB Atlas)
 Set `MONGO_URI`, `JWT_SECRET`, `CLIENT_URL`, `NODE_ENV=production`. Documents are stored in MongoDB, so they survive redeploys.
