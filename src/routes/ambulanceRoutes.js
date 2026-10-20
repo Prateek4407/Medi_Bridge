@@ -8,6 +8,7 @@ router.use(authenticate);
 router.get('/mine', authorize('driver'), c.mine);                     // keep "mine" routes above /:id
 router.patch('/mine/location', authorize('driver'), c.mineLocation);
 router.patch('/mine/status', authorize('driver'), c.mineStatus);
+router.post('/mine/cases/:caseId/pickup', authorize('driver'), c.confirmPickup);
 
 router.get('/', authorize('doctor'), c.list);
 router.post('/', authorize('doctor'), c.create);

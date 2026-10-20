@@ -107,6 +107,7 @@ exports.get = asyncHandler(async (req, res) => {
 exports.advance = asyncHandler(async (req, res) => {
   const c = await loadCase(req);
   if (!canAccess(c, req.user)) throw ApiError.forbidden();
+  if (!c.isDemo && c.stage >= 2) throw ApiError.conflict('Real emergency cases advance from ambulance GPS and driver actions.');
   if (c.stage < 5) {
     if (!(await svc.stepForward(c))) throw ApiError.conflict('No ambulance is free right now. The case will continue as soon as one becomes available.');
     await c.save();

@@ -47,8 +47,9 @@ async function stepForward(c, at = new Date()) {
   return true;
 }
 
-/** Moves the case forward by one stage every STEP ms (simulation, same as the frontend). */
+/** Demo cases move on the timer; real emergencies move only from GPS or driver confirmation. */
 async function advanceIfDue(c) {
+  if (!c.isDemo) return c;
   const now = Date.now();
   let changed = false;
   while (c.stage < 5 && now - c.stageStart.getTime() >= stageStepMs) {
@@ -64,6 +65,36 @@ async function advanceIfDue(c) {
   return c;
 }
 
+/** Advances a real case when the assigned ambulance reaches the pickup or hospital radius. */
+async function advanceForGps(c, at = new Date()) {
+  if (c.isDemo || !c.ambulance || c.stage >= 5) return false;
+  const location = c.ambulance.location;
+  if (!location || location.lat == null || location.lng == null) return false;
+  const hospital = c.hospital && c.hospital.name ? c.hospital : await Hospital.findById(c.hospital);
+  const target = c.stage === 2 ? ambulances.pickupPoint(c, hospital) : c.stage === 4 && hospital;
+  if (!target || target.lat == null || !ambulances.withinGpsRadius(location, target)) return false;
+  return stepForward(c, at);
+}
+
+/** Re-evaluates the active case whenever its assigned ambulance sends GPS. */
+async function reevaluateGps(amb, at = new Date()) {
+  if (!amb.assignedCase) return null;
+  const c = await Case.findOne({ caseId: amb.assignedCase }).populate('hospital').populate('ambulance');
+  if (!c || !(await advanceForGps(c, at))) return c;
+  await c.save();
+  realtime.notifyCase(c.caseId);
+  return c;
+}
+
+/** Driver confirms the patient has been loaded, moving a real case from pickup to hospital transit. */
+async function confirmPickup(c, at = new Date()) {
+  if (c.isDemo || c.stage !== 3 || !c.ambulance) return false;
+  if (!(await stepForward(c, at))) return false;
+  await c.save();
+  realtime.notifyCase(c.caseId);
+  return true;
+}
+
 /** "Restart demo": back to stage 0 and give the ambulance back. */
 async function restart(c) {
   await ambulances.release(c);
@@ -74,7 +105,19 @@ async function restart(c) {
   return c;
 }
 
-const progress = (c) => (c.stage >= 5 ? 1 : Math.min(1, (Date.now() - c.stageStart.getTime()) / stageStepMs));
+function progress(c) {
+  if (c.stage >= 5) return 1;
+  if (c.isDemo) return Math.min(1, (Date.now() - c.stageStart.getTime()) / stageStepMs);
+  if (c.stage < 2 || !c.ambulance || !c.ambulance.location) return 0;
+  const hospital = c.hospital && c.hospital.name ? c.hospital : null;
+  const target = c.stage === 2 ? ambulances.pickupPoint(c, hospital) : hospital;
+  const origin = c.stage === 2
+    ? (c.ambulanceOrigin || hospital)
+    : ambulances.pickupPoint(c, hospital);
+  if (!target || !origin || target.lat == null || origin.lat == null) return 0;
+  const total = ambulances.distanceKm(origin, target);
+  return total === 0 ? 0 : Math.min(1, ambulances.distanceKm(origin, c.ambulance.location) / total);
+}
 
 function etaMinutes(c, f) {
   const s = c.stage;
@@ -82,7 +125,11 @@ function etaMinutes(c, f) {
   return Math.ceil(m);
 }
 
-const statusOf = (c) => (c.stage >= 5 ? { label: 'Handoff completed', badge: 'green' } : { label: 'In transit', badge: 'estimated' });
+const statusOf = (c) => (
+  c.stage >= 5 ? { label: 'Handoff completed', badge: 'green' } :
+  !c.isDemo && c.stage >= 2 ? { label: 'GPS tracked', badge: 'live' } :
+  { label: 'In transit', badge: 'estimated' }
+);
 
 function timeline(c) {
   const s = c.stage;
@@ -125,7 +172,7 @@ function present(c, { full = false } = {}) {
     stageProgress: Number(f.toFixed(3)),
     status: statusOf(c),
     etaMinutes: etaMinutes(c, f),
-    liveStatus: waiting ? 'Hospital confirmed - waiting for a free ambulance' : ['Hospital is confirming the request', 'Hospital is confirming the request', 'Ambulance heading to the patient', 'Patient being loaded', 'Ambulance heading to hospital', 'Patient arrived at hospital'][s],
+    liveStatus: waiting ? 'Hospital confirmed - waiting for a free ambulance' : !c.isDemo && s === 2 ? 'Ambulance GPS: approaching pickup' : !c.isDemo && s === 4 ? 'Ambulance GPS: heading to hospital' : ['Hospital is confirming the request', 'Hospital is confirming the request', 'Ambulance heading to the patient', 'Patient being loaded', 'Ambulance heading to hospital', 'Patient arrived at hospital'][s],
     ambulance: ambulanceView(c, s, f, full),
     waitingForAmbulance: waiting,
     corridor: s < 2 ? 'Preparing' : s === 5 ? 'Completed' : 'Green corridor active',
@@ -144,4 +191,7 @@ function present(c, { full = false } = {}) {
   return out;
 }
 
-module.exports = { STAGES, uniqueCaseId, bestMatch, advanceIfDue, stepForward, restart, present };
+module.exports = {
+  STAGES, uniqueCaseId, bestMatch, advanceIfDue, advanceForGps, reevaluateGps, confirmPickup,
+  stepForward, restart, present
+};

@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { PHONE, str, check } = require('../utils/validators');
 const svc = require('../services/ambulanceService');
 const realtime = require('../services/realtime');
+const caseService = require('../services/caseService');
 
 const REG = /^[A-Z0-9][A-Z0-9 -]{3,14}$/;       // loose vehicle-number check, e.g. DL1CAB1234 or DL 1C AB 1234
 const num = (v) => (v === '' || v === null || v === undefined ? NaN : Number(v));
@@ -97,6 +98,7 @@ async function writeLocation(amb, body) {
     throw ApiError.badRequest('Send a valid latitude and longitude.', { lat: 'Invalid latitude.', lng: 'Invalid longitude.' });
   amb.location = { lat, lng, updatedAt: new Date(), source: 'gps' };
   await amb.save();
+  await caseService.reevaluateGps(amb);
   realtime.notifyCase(amb.assignedCase);           // wakes up the open tracking pages right away
 }
 
@@ -131,4 +133,17 @@ exports.location = asyncHandler(async (req, res) => {
   if (!canSend(amb, req.user)) throw ApiError.forbidden('Only the linked driver or hospital staff can update this ambulance.');
   await writeLocation(amb, req.body);
   res.json({ success: true, data: { ambulance: amb } });
+});
+
+/** POST /api/ambulances/mine/cases/:caseId/pickup   (driver) */
+exports.confirmPickup = asyncHandler(async (req, res) => {
+  const amb = await Ambulance.findOne({ driverUser: req.user._id });
+  if (!amb || amb.assignedCase !== req.params.caseId) throw ApiError.notFound('This case is not assigned to your ambulance.');
+  const Case = require('../models/Case');
+  const c = await Case.findOne({ caseId: req.params.caseId }).populate('hospital').populate('ambulance');
+  if (!c) throw ApiError.notFound('Case not found.');
+  if (c.isDemo || c.stage !== 3) throw ApiError.conflict('Pickup can only be confirmed after the ambulance reaches the pickup point.');
+  await caseService.confirmPickup(c);
+  await c.populate('ambulance');
+  res.json({ success: true, data: { case: caseService.present(c, { full: true }) } });
 });
