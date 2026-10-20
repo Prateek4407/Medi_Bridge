@@ -58,6 +58,7 @@ exports.create = asyncHandler(async (req, res) => {
     await Consent.create({ patient: req.user._id, scope: 'emergency-case', granted: true, caseId: c.caseId, note: 'Agreed to share details with the hospital and ambulance team' });
   }
   await c.populate(['hospital', 'ambulance']);
+  await svc.advanceIfDue(c);
   res.status(201).json({ success: true, message: `Request sent. Case ${c.caseId} created.`, data: { case: svc.present(c, { full: true }) } });
 });
 
@@ -107,7 +108,7 @@ exports.get = asyncHandler(async (req, res) => {
 exports.advance = asyncHandler(async (req, res) => {
   const c = await loadCase(req);
   if (!canAccess(c, req.user)) throw ApiError.forbidden();
-  if (!c.isDemo && c.stage >= 2) throw ApiError.conflict('Real emergency cases advance from ambulance GPS and driver actions.');
+  if (!c.isDemo) throw ApiError.conflict('Real emergency cases advance automatically from dispatch, ambulance GPS and driver actions.');
   if (c.stage < 5) {
     if (!(await svc.stepForward(c))) throw ApiError.conflict('No ambulance is free right now. The case will continue as soon as one becomes available.');
     await c.save();

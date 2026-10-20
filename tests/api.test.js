@@ -139,8 +139,8 @@ describe('Emergency cases', () => {
   test('create without login (public emergency flow)', async () => {
     const r = await api().post('/api/cases').send(caseBody());
     expect(r.status).toBe(201); c = r.body.data.case;
-    expect(c.caseId).toMatch(/^CB-\d{4}$/); expect(c.stage).toBe(0); expect(c.hospital.id).toBe('H2'); // best Cardiac match = fastest non-saturated (7 min)
-    expect(c.timeline).toHaveLength(6); expect(c.timeline[0].state).toBe('now');
+    expect(c.caseId).toMatch(/^CB-\d{4}$/); expect(c.stage).toBe(1); expect(c.hospital.id).toBe('H2'); // hospital confirmation is automatic
+    expect(c.timeline).toHaveLength(6); expect(c.timeline[0].state).toBe('done');
   });
   test('validation + consent required', async () => {
     const r = await api().post('/api/cases').send(caseBody({ name: 'x', age: 200, sex: 'Robot', phone: '123', care: 'Dental', sev: 'P9', address: 'ab', consent: false }));

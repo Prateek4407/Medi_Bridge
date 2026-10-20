@@ -49,7 +49,7 @@ async function stepForward(c, at = new Date()) {
 
 /** Demo cases move on the timer; real emergencies move only from GPS or driver confirmation. */
 async function advanceIfDue(c) {
-  if (!c.isDemo) return c;
+  if (!c.isDemo) return autoDispatch(c);
   const now = Date.now();
   let changed = false;
   while (c.stage < 5 && now - c.stageStart.getTime() >= stageStepMs) {
@@ -62,6 +62,31 @@ async function advanceIfDue(c) {
     changed = true;
   }
   if (changed) { await c.save(); realtime.notifyCase(c.caseId); }
+  return c;
+}
+
+/** Real cases are confirmed and dispatched immediately; later stages remain event-driven. */
+async function autoDispatch(c) {
+  if (c.isDemo || c.stage >= 2) return c;
+  let changed = false;
+  if (c.stage === 0) {
+    c.stage = 1;
+    c.stageStart = new Date();
+    c.stageLog.push({ stage: 1, at: c.stageStart });
+    changed = true;
+  }
+  if (c.stage === 1 && !c.ambulance) {
+    if (await ambulances.assignNearest(c)) {
+      c.stage = 2;
+      c.stageStart = new Date();
+      c.stageLog.push({ stage: 2, at: c.stageStart });
+      changed = true;
+    }
+  }
+  if (changed) {
+    await c.save();
+    realtime.notifyCase(c.caseId);
+  }
   return c;
 }
 
@@ -192,6 +217,6 @@ function present(c, { full = false } = {}) {
 }
 
 module.exports = {
-  STAGES, uniqueCaseId, bestMatch, advanceIfDue, advanceForGps, reevaluateGps, confirmPickup,
+  STAGES, uniqueCaseId, bestMatch, advanceIfDue, autoDispatch, advanceForGps, reevaluateGps, confirmPickup,
   stepForward, restart, present
 };

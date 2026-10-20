@@ -81,7 +81,8 @@ only `services/fileStorage.js`.
 * `GET /api/cases/:caseId/stream` pushes updates with Server-Sent Events (no new package). The page falls back to polling.
 * A driver registers with the role **driver**, a doctor links the driver's email to an ambulance, and the driver's phone
   sends GPS to `PATCH /api/ambulances/mine/location` (the Driver page does this every 4 s).
-* Real emergencies do not advance or complete from `STAGE_STEP_MS`: fresh GPS within 100 m of the pickup moves the case to
+* Real emergencies automatically move through hospital confirmation and ambulance assignment (when a fleet ambulance is
+  available) without a manual Advance action. They do not otherwise advance or complete from `STAGE_STEP_MS`: fresh GPS within 100 m of the pickup moves the case to
   **Pickup done**, `POST /api/ambulances/mine/cases/:caseId/pickup` confirms the patient is loaded, and GPS within 100 m of
   the hospital completes the case. Demo cases retain timer-driven progression.
 * While GPS is fresh (< 90 s) the tracking page shows `source: "live"`. After a case completes, a fresh final GPS fix is retained as
